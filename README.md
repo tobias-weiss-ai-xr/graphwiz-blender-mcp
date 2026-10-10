@@ -1,281 +1,122 @@
-# GraphWiz Blender MCP Connector
+# GraphWiz Blender MCP
 
-A Model Context Protocol (MCP) connector for Blender that enables bidirectional communication between MCP clients and Blender 3D.
+Blender ↔ LLM integration for the GraphWiz ecosystem. This repo is the setup/config home for controlling Blender from any MCP client (pi, Claude Code, Cursor, ob.com…).
 
-## Overview
+## What's integrated
 
-This project provides a TCP-based connector that runs inside Blender, allowing external MCP servers to execute Python code and query scene information in real-time. It's designed to work with the [`@glutamateapp/blender-mcp-ts`](https://github.com/ShadowCloneLabs/GlutamateMCPServers) TypeScript server.
+The solution is built on **[mcp-for-blender](https://github.com/ahujasid/mcp-for-blender)** (by [Siddharth Ahuja](https://github.com/ahujasid), the author of the original `blender-mcp` this project was based on). It is the de-facto standard Blender MCP server (~30k stars, actively maintained) and subsumes everything the original `@glutamateapp/blender-mcp-ts` connector offered.
 
-## Features
+**MCP server** (runs via `uvx mcp-for-blender`, stdio): 9 tools
 
-- **TCP Socket Server**: Runs on port 9025 (configurable) to receive commands
-- **Python Code Execution**: Safely execute arbitrary Python code in Blender
-- **Scene Information**: Query objects, materials, and scene data
-- **Object Manipulation**: Create, modify, and delete 3D objects
-- **Material Management**: Create and apply materials to objects
-- **Viewport Control**: Frame objects and control viewport display
+| Tool | Purpose |
+|---|---|
+| `execute_blender_code` | Run arbitrary Python in your live Blender |
+| `get_scene_info` | Compact scene summary, one line per object |
+| `look` | **Visual verification** — viewport/camera/multi-angle screenshots, renders, wireframe/xray |
+| `generate_3d` | Text/image → 3D via Tripo, Hunyuan3D, Hyper3D Rodin |
+| `search_assets` / `import_asset` | Poly Haven, Sketchfab, Poly Pizza, AmbientCG assets |
+| `get_addon_status` | Blender + addon version, enabled libraries |
+| `disable_telemetry` / `record_trajectory_feedback` | Data controls |
 
-## Installation
+**Blender addon** (installed in Blender, listens on TCP port 9876).
 
-### Prerequisites
-
-- Blender 4.0 or later
-- Python 3.10+
-- Node.js 16+ (for the MCP server)
-- `@glutamateapp/blender-mcp-ts` package
-
-### Setup
-
-1. **Clone this repository**:
-   ```bash
-   git clone https://github.com/yourusername/graphwiz-blender-mcp.git
-   cd graphwiz-blender-mcp
-   ```
-
-2. **Install the MCP TypeScript server**:
-   ```bash
-   npm install -g @glutamateapp/blender-mcp-ts
-   ```
-
-3. **Configure Claude Code MCP settings**:
-   Add to your `.claude/mcp.json`:
-   ```json
-   {
-     "mcpServers": {
-       "blender": {
-         "command": "node",
-         "args": [
-           "C:\\Users\\YourUsername\\AppData\\Roaming\\npm\\node_modules\\@glutamateapp\\blender-mcp-ts\\dist\\index.js"
-         ],
-         "env": {
-           "PORT": "9876",
-           "CONNECTOR_PORT": "9025"
-         }
-       }
-     }
-   }
-   ```
-
-## Usage
-
-### Starting the Connector
-
-1. **Open Blender**
-2. Go to the **Scripting** workspace
-3. Open `blender_mcp_connector.py`
-4. Click **Run Script** (▶) or press `Alt+P`
-
-You should see:
 ```
-Blender MCP Connector Started
-Listening on localhost:9025
-Waiting for MCP server to connect...
+┌─────────────┐   stdio (MCP)    ┌──────────────────┐    TCP 9876    ┌──────────┐
+│  MCP client │◄────────────────►│ mcp-for-blender  │◄──────────────►│  Blender │
+│  pi / etc.  │   uvx mcp-for-blender  │   (FastMCP server)  │  addon (bpy)  │
+└─────────────┘                └──────────────────┘                └──────────┘
 ```
 
-### Sending Commands
+## Setup
 
-**Option 1: Direct Python Script**
+Prereqs: Blender 3.0+, [uv](https://docs.astral.sh/uv/), pip's `uv` doesn't count.
 
-Use `blender_direct_connector.py` to send commands:
+### 1. Install the Blender addon
 
-```python
-import socket
-import json
+```bash
+uvx mcp-for-blender install-addon
+# list detected Blender addons folders:
+uvx mcp-for-blender addon-paths
+```
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect(('localhost', 9025))
+In Blender: **Edit → Preferences → Add-ons** → enable **Interface: MCP for Blender** (restart Blender if it doesn't show). Then in the 3D viewport sidebar (**N** → **MCP for Blender** tab) click **Start MCP Server**. Or run headless:
 
-command = {
-    'type': 'execute_blender_code',
-    'params': {
-        'code': 'import bpy\nbpy.ops.mesh.primitive_cube_add(size=2)'
+```bash
+blender --python-expr "import blender_mcp; blender_mcp.start_server()"
+```
+
+### 2. Register the MCP server
+
+pi (`~/.pi/agent/mcp.json`) — this repo's machine is already configured:
+
+```json
+{
+  "mcpServers": {
+    "blender": {
+      "command": "C:/ProgramData/chocolatey/bin/uvx.exe",
+      "args": ["mcp-for-blender"]
     }
-}
-
-sock.sendall(json.dumps(command).encode('utf-8'))
-response = json.loads(sock.recv(4096).decode('utf-8'))
-print(response)
-```
-
-**Option 2: MCP Server**
-
-The MCP server will automatically connect and provide tools:
-- `execute_blender_code` - Execute Python code
-- `get_scene_info` - Get scene information
-- `get_object_info` - Get specific object details
-
-## Available Commands
-
-### execute_blender_code
-
-Execute arbitrary Python code in Blender:
-
-```json
-{
-  "type": "execute_blender_code",
-  "params": {
-    "code": "import bpy\nbpy.ops.mesh.primitive_cube_add(size=2)"
   }
 }
 ```
 
-### get_scene_info
+Use the absolute `uvx` path so GUI-launched clients (which don't inherit your terminal PATH) still find it. On a locked-down machine without uv: `pipx install mcp-for-blender` and point the client at that binary instead.
 
-Get information about all objects in the scene:
-
-```json
-{
-  "type": "get_scene_info",
-  "params": {}
-}
+```bash
+# Claude Code / Codex:
+claude mcp add blender uvx mcp-for-blender
+codex mcp add blender -- uvx mcp-for-blender
 ```
 
-Response:
-```json
-{
-  "status": "success",
-  "result": {
-    "objects": [
-      {
-        "name": "Cube",
-        "type": "MESH",
-        "location": [0.0, 0.0, 0.0],
-        "visible": true
-      }
-    ],
-    "object_count": 1
-  }
-}
+### 3. Update
+
+```bash
+uvx mcp-for-blender@latest update   # server + every installed addon copy
 ```
 
-### get_object_info
-
-Get detailed information about a specific object:
-
-```json
-{
-  "type": "get_object_info",
-  "params": {
-    "name": "Cube"
-  }
-}
-```
-
-## Examples
-
-### Add a Colored Cube
+## Usage examples
 
 ```python
-code = '''
-import bpy
-
-# Add cube
-bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
-cube = bpy.context.active_object
-
-# Add material
-mat = bpy.data.materials.new(name="BlueMat")
-mat.use_nodes = True
-bsdf = mat.node_tree.nodes["Principled BSDF"]
-bsdf.inputs["Base Color"].default_value = (0.2, 0.5, 0.8, 1.0)
-
-cube.data.materials.append(mat)
-
-# Frame in viewport
-for area in bpy.context.screen.areas:
-    if area.type == 'VIEW_3D':
-        for region in area.regions:
-            if region.type == 'WINDOW':
-                override = {'area': area, 'region': region}
-                bpy.ops.view3d.view_selected(override)
-'''
+# Model something, then see it:
+bpy.ops.mesh.primitive_cube_add(size=2)
+# look(viewport=...) → screenshot comes back to the model
 ```
 
-### Create a Simple Scene
+Typical loop: model via `execute_blender_code` → `look` → fix → render → export.
 
-```python
-code = '''
-import bpy
+## Ecosystem survey (integrated options considered)
 
-# Clear scene
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
+Surveyed GitHub (Nov 2025–2026). One server was adopted to avoid port conflicts (every addon wants 9876) and tool-name collisions:
 
-# Add cube
-bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
+| Project | Tools | Verdict |
+|---|---|---|
+| **ahujasid/mcp-for-blender** | 9 core | ✅ **adopted** — de-facto standard, maintained, visual verification + assets + generation |
+| ageless-h/blender-mcp | 29 | Good deep-perception API (`blender_` prefix), but alpha-grade; duplicative of the above |
+| djeada/blender-mcp-server | 27 | Nice file I/O + async jobs; reimplements what `execute_blender_code` already covers |
+| mackson/blender-mcp | 17 | TS + WebSocket bridge; Antigravity-oriented, fewer tools |
+| RFingAdam/mcp-blender | 218 | MSFS/engineering niche + AI pipeline; overkill |
+| PatrykIti/blender-ai-mcp | ~30 | Goal-first router + vision MLX; complex, cloud dependencies |
+| Blender Foundation MCP | — | Official, but Blender 5.1+ only (this machine: 4.0/4.4); llama.cpp-bound |
+| Pervaiz106/Blender-Mcp-Server | 47 | 0 stars, unmaintained |
 
-# Add light
-bpy.ops.object.light_add(type='SUN', location=(5, 5, 10))
-bpy.context.active_object.data.energy = 5
+If you need the curated 29-tool `blender_*` surface later, `ageless-h` can be registered as a *second* server (it uses `blender_` prefixes precisely to coexist).
 
-# Add camera
-bpy.ops.object.camera_add(location=(7, -7, 5))
-bpy.context.scene.camera = bpy.context.active_object
-'''
-```
+## Legacy (original GraphWiz connector)
 
-## Project Structure
+`blender_mcp_connector.py` (+ `@glutamateapp/blender-mcp-ts`) is the original hand-rolled TCP connector. It still works but is superseded — it exposed only 8 tools and required a separate TS server. Keep it only if you need the raw port-9025 JSON protocol:
 
-```
-graphwiz-blender-mcp/
-├── blender_mcp_connector.py      # Main connector script (run in Blender)
-├── blender_direct_connector.py    # Direct Python client
-├── test_cube_simple.py            # Simple test script
-├── mcp_blender_test.py            # MCP HTTP test
-├── mcp_blender_sse.py             # MCP SSE test
-├── add_cube_blender.py            # Standalone cube script
-├── README.md                      # This file
-└── LICENSE                        # MIT License
-```
+- `blender_mcp_connector.py` — run inside Blender (port 9025)
+- `blender_direct_connector.py` / `test_cube_simple.py` — raw TCP clients
+- `mcp_blender_sse.py` / `mcp_blender_test.py` — legacy HTTP/SSE probes (port 9876, outdated)
+- `add_cube_blender.py` — standalone scene-setup demo
 
 ## Troubleshooting
 
-### Connector not responding
-
-1. Check that Blender is running the connector script
-2. Verify port 9025 is not in use: `netstat -an | grep 9025`
-3. Check Blender's system console for errors (Window > Toggle System Console)
-
-### "__import__ not found" error
-
-Make sure you're running the latest version of the connector script. Restart Blender completely to clear any cached modules.
-
-### MCP server can't connect
-
-1. Verify the MCP server is configured to use port 9025 for the connector
-2. Check that `CONNECTOR_PORT` environment variable is set
-3. Ensure the connector is running before starting the MCP server
-
-## Architecture
-
-```
-┌─────────────┐      TCP       ┌──────────────┐      HTTP/SSE      ┌──────────┐
-│   Blender   │◄──────────────►│   Connector  │◄──────────────────►│ MCP Host │
-│             │   Port 9025    │  (in Blender) │     Port 9876      │          │
-└─────────────┘                └──────────────┘                    └──────────┘
-```
-
-1. **Connector** runs inside Blender on port 9025
-2. **MCP Server** (TypeScript) connects to the connector
-3. **MCP Client** (Claude Code) connects to the MCP server
-4. Commands flow: Client → MCP Server → Connector → Blender
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+- **Addon won't connect**: confirm Blender's addon shows `Server running on ws://…:9876`. Check `netstat -an | grep 9876`. Only one Blender may own the port.
+- **GUI client can't spawn the server**: use the absolute `uvx.exe` path (or `cmd /c uvx …` on Windows) and fully quit/relaunch the client.
+- **`uvx` runs an old version**: `uvx mcp-for-blender@latest update` — early releases lacked `update`.
+- **Blender 4.0**: works, but `look`/generators want a recent addon — update via the in-Blender sidebar tab.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Based on work by [Siddharth Ahuja](https://github.com/ahujasid/blender-mcp)
-- Built to work with [`@glutamateapp/blender-mcp-ts`](https://github.com/ShadowCloneLabs/GlutamateMCPServers)
-- Part of the [GraphWiz](https://graphwiz.ai) ecosystem
-
-## Related Projects
-
-- [GraphWiz](https://graphwiz.ai) - Knowledge graph visualization
-- [Neo4j GraphWiz MCP](https://github.com/yourusername/neo4j-graphwiz) - Neo4j MCP server
-- [@glutamateapp/blender-mcp-ts](https://github.com/ShadowCloneLabs/GlutamateMCPServers) - TypeScript MCP server for Blender
+MIT — see [LICENSE](LICENSE).
