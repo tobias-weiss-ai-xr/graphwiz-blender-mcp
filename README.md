@@ -39,11 +39,15 @@ uvx mcp-for-blender install-addon
 uvx mcp-for-blender addon-paths
 ```
 
-In Blender: **Edit → Preferences → Add-ons** → enable **Interface: MCP for Blender** (restart Blender if it doesn't show). Then in the 3D viewport sidebar (**N** → **MCP for Blender** tab) click **Start MCP Server**. Or run headless:
+In Blender: **Edit → Preferences → Add-ons** → enable **Interface: MCP for Blender** (restart Blender if it doesn't show). Then in the 3D viewport sidebar (**N** → **MCP for Blender** tab) click **Start MCP Server**.
+
+To force the addon on + auto-start the server at every launch without clicking:
 
 ```bash
-blender --python-expr "import blender_mcp; blender_mcp.start_server()"
+blender --python "C:/Users/<you>/git/graphwiz-blender-mcp/enable_mcp_on_startup.py"
 ```
+
+(`enable_mcp_on_startup.py` enables the addon with `default_set=True` and forces `blendermcp_auto_start_server`.)
 
 ### 2. Register the MCP server
 
